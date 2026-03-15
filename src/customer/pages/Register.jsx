@@ -4,6 +4,12 @@ import { supabase } from '../../lib/supabase';
 import { User, Phone, Calendar, ArrowRight, Loader2, Bell, CheckCircle } from 'lucide-react';
 import { requestNotificationPermission } from '../../firebase';
 
+// === PRODUCTION DEBUG: runs at module load time ===
+console.log('Production QR value (from module load):', new URLSearchParams(window.location.search).get('qr'));
+console.log('Supabase URL exists:', !!import.meta.env.VITE_SUPABASE_URL);
+console.log('Supabase anon key exists:', !!import.meta.env.VITE_SUPABASE_ANON_KEY);
+// ===================================================
+
 export default function Register() {
   const [searchParams] = useSearchParams();
   const qrString = searchParams.get('qr');
@@ -20,7 +26,10 @@ export default function Register() {
   // Notification Prompt State
   const [showNotificationPrompt, setShowNotificationPrompt] = useState(false);
   const [registeredCustomerId, setRegisteredCustomerId] = useState(null);
-  const [notificationStatus, setNotificationStatus] = useState('idle'); // idle, loading, success, error
+  const [notificationStatus, setNotificationStatus] = useState('idle');
+
+  // === ENV VAR CHECK: show on screen immediately if missing ===
+  const envMissing = !import.meta.env.VITE_SUPABASE_URL || !import.meta.env.VITE_SUPABASE_ANON_KEY;
 
   const handleChange = (e) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
@@ -32,12 +41,12 @@ export default function Register() {
     setError('');
 
     try {
-      // DEBUG: check env vars are present in production build
-      console.log('[Register] VITE_SUPABASE_URL exists:', !!import.meta.env.VITE_SUPABASE_URL);
-      console.log('[Register] VITE_SUPABASE_ANON_KEY exists:', !!import.meta.env.VITE_SUPABASE_ANON_KEY);
-      console.log('[Register] QR string from URL:', qrString);
+      // === PRODUCTION DEBUG: on submit ===
+      console.log('Supabase URL exists:', !!import.meta.env.VITE_SUPABASE_URL);
+      console.log('Supabase anon key exists:', !!import.meta.env.VITE_SUPABASE_ANON_KEY);
+      console.log('Production QR value:', qrString);
+      // ====================================
 
-      // Guard: if env vars missing, show visible error
       if (!import.meta.env.VITE_SUPABASE_URL || !import.meta.env.VITE_SUPABASE_ANON_KEY) {
         throw new Error('إعدادات الاتصال غير مكتملة. تواصل مع الإدارة.');
       }
@@ -47,9 +56,9 @@ export default function Register() {
       }
 
       const formattedQrString = qrString.trim();
-      console.log('[Register] Step 1: Querying qr_codes table for code:', formattedQrString);
+      console.log('QR query starting for code:', formattedQrString);
 
-      // 1. Look up the qr_codes table (separated from join to prevent errors)
+      // 1. Look up the qr_codes table
       const { data: qrData, error: qrError } = await supabase
         .from('qr_codes')
         .select('*')
@@ -57,10 +66,10 @@ export default function Register() {
         .eq('is_active', true)
         .limit(1);
         
-      console.log('[Register] Step 1 Result:', { qrData, qrError });
+      console.log('QR query result:', { qrData, qrError });
         
       if (qrError) {
-        console.error('[Register] QR Query error:', qrError);
+        console.error('QR Query error:', qrError);
         throw new Error(`حصلت مشكلة في الاتصال: ${qrError.message}`);
       }
       
@@ -70,7 +79,7 @@ export default function Register() {
       
       const qrDoc = qrData[0];
       const businessId = qrDoc.business_id;
-      console.log('Step 2: Searching for Business ID:', businessId);
+      console.log('Business ID found:', businessId);
 
       // 2. Fetch business data
       const { data: bizData, error: bizError } = await supabase
@@ -79,7 +88,7 @@ export default function Register() {
         .eq('id', businessId)
         .limit(1);
 
-      console.log('Step 2 Result - Business data:', { bizData, bizError });
+      console.log('Business data:', { bizData, bizError });
       
       if (bizError) {
         throw new Error(`خطأ في البحث عن النشاط التجاري: ${bizError.message}`);
@@ -95,7 +104,6 @@ export default function Register() {
         throw new Error('اشتراك النشاط ده خلص.');
       }
 
-      // Check if phone exists in our 'customers' table.
       // 3. Try to find existing customer
       let customer;
       const { data: existingCustomer } = await supabase
@@ -107,7 +115,6 @@ export default function Register() {
         
       if (existingCustomer) {
         customer = existingCustomer;
-        // Just log the visit
       } else {
         // Enforce SaaS Subscription Limits for NEW Customers
         const plan = business.subscription_plan || 'starter';
@@ -124,7 +131,7 @@ export default function Register() {
             throw new Error(`آسفين! النشاط ده جاب آخره من عدد العملاء (${plan}). بلّغ الإدارة يرّقوا الباقة.`);
         }
 
-        // 4. Create new customer matching exact DB schema
+        // 4. Create new customer
         const { data: newCustomer, error: insertError } = await supabase
           .from('customers')
           .insert([
@@ -135,7 +142,7 @@ export default function Register() {
               business_id: businessId,
               total_points: 0,
               total_spent: 0,
-              visits_count: 1, // default 1 for first visit
+              visits_count: 1,
               is_vip: false
             }
           ])
@@ -158,11 +165,10 @@ export default function Register() {
             {
               customer_id: customer.id,
               business_id: businessId,
-              points_earned: 10 // First visit or regular visit points
+              points_earned: 10
             }
           ]);
           
-         // Update customer totals manually since RPC might not exist on all Supabase instances
          const newPoints = (customer.total_points || 0) + 10;
          const newVisits = existingCustomer ? ((customer.visits_count || 0) + 1) : (customer.visits_count || 1);
 
@@ -175,12 +181,11 @@ export default function Register() {
             .eq('id', customer.id);
       }
 
-      // 6. Save to local storage for future visits
+      // 6. Save to local storage
       localStorage.setItem(`loyalty_customer_${businessId}`, customer.id);
       localStorage.setItem('customerId', customer.id);
       localStorage.setItem('customerPhone', formData.phone);
       
-      // Instead of navigating immediately, show notification prompt
       setRegisteredCustomerId(customer.id);
       setShowNotificationPrompt(true);
 
@@ -203,7 +208,6 @@ export default function Register() {
       if (permission === 'granted') {
         console.log('Permission granted, getting token...');
         
-        // Import firebase messaging
         const { getToken } = await import('firebase/messaging');
         const { messaging } = await import('../../firebase');
         
@@ -216,7 +220,6 @@ export default function Register() {
         console.log('FCM Token received:', token);
         
         if (token && registeredCustomerId) {
-          // Save to Supabase
           const { data, error } = await supabase
             .from('customers')
             .update({ fcm_token: token })
@@ -225,7 +228,6 @@ export default function Register() {
           console.log('Supabase update result:', data, error);
           
           if (!error) {
-            // Show success message
             console.log('Token saved successfully!');
             setNotificationStatus('success');
             setTimeout(() => navigate(`/customer/profile/${registeredCustomerId}?welcome=true`), 2000);
@@ -257,6 +259,24 @@ export default function Register() {
     navigate(`/customer/profile/${registeredCustomerId}?welcome=true`);
   };
 
+  // === ON-SCREEN env var warning (visible even without opening console) ===
+  if (envMissing) {
+    return (
+      <div className="flex flex-col p-6 min-h-screen items-center justify-center text-center">
+        <div className="bg-red-50 border border-red-200 rounded-2xl p-8 max-w-sm w-full">
+          <div className="text-4xl mb-4">⚠️</div>
+          <h2 className="text-xl font-bold text-red-700 mb-2">إعدادات الاتصال غير مكتملة</h2>
+          <p className="text-red-600 text-sm">تواصل مع الإدارة.</p>
+          <p className="text-gray-400 text-xs mt-4 font-mono" dir="ltr">
+            VITE_SUPABASE_URL: {import.meta.env.VITE_SUPABASE_URL ? '✓' : '✗ missing'}<br/>
+            VITE_SUPABASE_ANON_KEY: {import.meta.env.VITE_SUPABASE_ANON_KEY ? '✓' : '✗ missing'}
+          </p>
+        </div>
+      </div>
+    );
+  }
+  // =========================================================================
+
   if (showNotificationPrompt) {
     return (
       <div className="flex flex-col p-6 min-h-screen items-center justify-center bg-gray-50 text-center">
@@ -270,7 +290,6 @@ export default function Register() {
               <Bell size={40} className="animate-wiggle" />
             )}
             
-            {/* Sparkles effect behind the bell */}
             {notificationStatus === 'idle' && (
                <div className="absolute inset-0 bg-gradient-to-tr from-indigo-500/20 to-purple-500/20 mix-blend-overlay"></div>
             )}
