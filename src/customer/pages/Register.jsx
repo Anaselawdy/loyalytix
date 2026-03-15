@@ -32,12 +32,22 @@ export default function Register() {
     setError('');
 
     try {
+      // DEBUG: check env vars are present in production build
+      console.log('[Register] VITE_SUPABASE_URL exists:', !!import.meta.env.VITE_SUPABASE_URL);
+      console.log('[Register] VITE_SUPABASE_ANON_KEY exists:', !!import.meta.env.VITE_SUPABASE_ANON_KEY);
+      console.log('[Register] QR string from URL:', qrString);
+
+      // Guard: if env vars missing, show visible error
+      if (!import.meta.env.VITE_SUPABASE_URL || !import.meta.env.VITE_SUPABASE_ANON_KEY) {
+        throw new Error('إعدادات الاتصال غير مكتملة. تواصل مع الإدارة.');
+      }
+
       if (!qrString) {
         throw new Error('مفيش QR Code. امسحه تاني لو سمحت.');
       }
 
       const formattedQrString = qrString.trim();
-      console.log('Step 1: Searching for QR code (Register):', formattedQrString);
+      console.log('[Register] Step 1: Querying qr_codes table for code:', formattedQrString);
 
       // 1. Look up the qr_codes table (separated from join to prevent errors)
       const { data: qrData, error: qrError } = await supabase
@@ -47,11 +57,11 @@ export default function Register() {
         .eq('is_active', true)
         .limit(1);
         
-      console.log('Step 1 Result - QR data:', { qrData, qrError });
+      console.log('[Register] Step 1 Result:', { qrData, qrError });
         
       if (qrError) {
-        console.error('QR Query error:', qrError);
-        throw new Error(`خطأ في قاعدة البيانات: ${qrError.message}`);
+        console.error('[Register] QR Query error:', qrError);
+        throw new Error(`حصلت مشكلة في الاتصال: ${qrError.message}`);
       }
       
       if (!qrData || qrData.length === 0) {
