@@ -11,6 +11,9 @@ export default function QRCodes() {
   const [errorMessage, setErrorMessage] = useState('');
   const [generating, setGenerating] = useState(false);
 
+  // Use env var for production URL, fallback to current origin for local dev
+  const BASE_URL = import.meta.env.VITE_APP_URL || window.location.origin;
+
   useEffect(() => {
     fetchQRCodes();
   }, [user]);
@@ -265,7 +268,7 @@ export default function QRCodes() {
               >
                 <div className="bg-white p-4 rounded-xl shadow-sm">
                   <QRCodeSVG
-                    value={`${window.location.origin}/customer/register?qr=${qr.code}`}
+                    value={`${BASE_URL}/customer/register?qr=${qr.code}`}
                     size={200}
                     level="H"
                     includeMargin={true}
