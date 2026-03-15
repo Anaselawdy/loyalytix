@@ -11,12 +11,40 @@ const firebaseConfig = {
 };
 
 const app = initializeApp(firebaseConfig);
-const messaging = getMessaging(app);
+
+// Safely initialize messaging — not available in all environments (e.g. iOS Safari, some mobiles)
+let messaging = null;
+try {
+  if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
+    messaging = getMessaging(app);
+  }
+} catch (e) {
+  console.warn('Firebase messaging not supported in this environment:', e.message);
+}
+
+/**
+ * Returns true if push notifications are supported on this device/browser.
+ * Checks: Notification API, serviceWorker, PushManager, and Firebase messaging.
+ */
+export function isNotificationsSupported() {
+  return (
+    typeof Notification !== 'undefined' &&
+    typeof window !== 'undefined' &&
+    'serviceWorker' in navigator &&
+    'PushManager' in window &&
+    messaging !== null
+  );
+}
 
 const VAPID_KEY = "YOUR_VAPID_KEY";
 
 // Request notification permission and get token
 export async function requestNotificationPermission() {
+  if (!isNotificationsSupported()) {
+    console.warn('Push notifications not supported on this device/browser.');
+    return null;
+  }
+
   try {
     const permission = await Notification.requestPermission();
     if (permission === 'granted') {
@@ -35,6 +63,7 @@ export async function requestNotificationPermission() {
 
 // Listen for foreground messages
 export function onForegroundMessage(callback) {
+  if (!messaging) return;
   onMessage(messaging, (payload) => {
     console.log('Foreground message received:', payload);
     callback(payload);

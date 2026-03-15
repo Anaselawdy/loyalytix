@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { User, Phone, Calendar, ArrowRight, Loader2, Bell, CheckCircle } from 'lucide-react';
-import { requestNotificationPermission } from '../../firebase';
+import { isNotificationsSupported } from '../../firebase';
 
 // === PRODUCTION DEBUG: runs at module load time ===
 console.log('Production QR value (from module load):', new URLSearchParams(window.location.search).get('qr'));
@@ -200,6 +200,14 @@ export default function Register() {
   const handleEnableNotifications = async () => {
     setNotificationStatus('loading');
     console.log('Starting notification setup for customer:', registeredCustomerId);
+
+    // Guard: check browser/device support before touching Notification API
+    if (!isNotificationsSupported()) {
+      console.warn('Notifications not supported on this device/browser.');
+      setNotificationStatus('error');
+      setTimeout(() => navigate(`/customer/profile/${registeredCustomerId}?welcome=true`), 3000);
+      return;
+    }
     
     try {
       const permission = await Notification.requestPermission();
@@ -210,6 +218,13 @@ export default function Register() {
         
         const { getToken } = await import('firebase/messaging');
         const { messaging } = await import('../../firebase');
+
+        if (!messaging) {
+          console.warn('Firebase messaging object is null — unsupported environment.');
+          setNotificationStatus('error');
+          setTimeout(() => navigate(`/customer/profile/${registeredCustomerId}?welcome=true`), 3000);
+          return;
+        }
         
         console.log('Messaging object:', messaging);
         
@@ -310,13 +325,19 @@ export default function Register() {
 
           {notificationStatus === 'idle' && (
             <div className="space-y-3">
-              <button
-                onClick={handleEnableNotifications}
-                className="w-full flex justify-center items-center py-4 px-4 border border-transparent rounded-xl shadow-[0_8px_30px_rgb(79,70,229,0.2)] text-lg font-medium text-white bg-indigo-600 hover:bg-indigo-700 hover:-translate-y-1 transition-all"
-              >
-                شغّلها دلوقتي
-              </button>
-              
+              {isNotificationsSupported() ? (
+                <button
+                  onClick={handleEnableNotifications}
+                  className="w-full flex justify-center items-center py-4 px-4 border border-transparent rounded-xl shadow-[0_8px_30px_rgb(79,70,229,0.2)] text-lg font-medium text-white bg-indigo-600 hover:bg-indigo-700 hover:-translate-y-1 transition-all"
+                >
+                  شغّلها دلوقتي
+                </button>
+              ) : (
+                <p className="text-sm text-gray-400 bg-gray-50 rounded-xl p-3">
+                  الإشعارات مش متاحة على الجهاز أو المتصفح ده حالياً
+                </p>
+              )}
+
               <button
                 onClick={handleSkipNotifications}
                 className="w-full py-4 px-4 rounded-xl text-gray-500 hover:text-gray-900 hover:bg-gray-100 font-medium transition-colors"

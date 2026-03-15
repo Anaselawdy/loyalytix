@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Gift, MapPin, BellRing, BellOff, Loader2 } from 'lucide-react';
-import { requestNotificationPermission, onForegroundMessage } from '../../firebase';
+import { isNotificationsSupported, onForegroundMessage } from '../../firebase';
 import { supabase } from '../../lib/supabase';
 
 export default function Profile() {
@@ -162,12 +162,24 @@ export default function Profile() {
   };
 
   const handleEnableNotifications = async () => {
+    // Guard: check browser/device support before touching Notification API
+    if (!isNotificationsSupported()) {
+      alert('الإشعارات مش متاحة على الجهاز أو المتصفح ده حالياً');
+      return;
+    }
+
     setNotificationLoading(true);
     try {
       const permission = await Notification.requestPermission();
       if (permission === 'granted') {
         const { getToken } = await import('firebase/messaging');
         const { messaging } = await import('../../firebase');
+
+        if (!messaging) {
+          alert('الإشعارات مش متاحة على الجهاز ده حالياً');
+          return;
+        }
+
         const token = await getToken(messaging, { 
           vapidKey: 'BJ8wlw_qDGiq8YJ277b8B-MJfjbWysNFrvvl7ohbKoICANZA7zDoHvvR5cv-0KptafIZuOvF5wNCFMU-lDETfYk'
         });
@@ -183,9 +195,12 @@ export default function Profile() {
             setHasToken(true);
           }
         }
+      } else {
+        alert('الإشعارات مقفولة. تقدر تفتحها من إعدادات المتصفح.');
       }
     } catch (error) {
        console.error(error);
+       alert('حصلت مشكلة في تفعيل الإشعارات.');
     } finally {
       setNotificationLoading(false);
     }
@@ -329,12 +344,16 @@ export default function Profile() {
               <div className="text-right">
                 <p className="font-bold text-gray-900 text-sm">إشعارات العروض</p>
                 <p className="text-xs text-gray-500 mt-0.5">
-                  {hasToken ? 'الإشعارات شغالة' : 'عشان تعرف كل جديد وتجيلك الفلوس'}
+                  {hasToken
+                    ? 'الإشعارات شغالة'
+                    : isNotificationsSupported()
+                    ? 'عشان تعرف كل جديد وتجيلك الفلوس'
+                    : 'الإشعارات مش متاحة على الجهاز ده حالياً'}
                 </p>
               </div>
             </div>
             
-            {!hasToken && (
+            {!hasToken && isNotificationsSupported() && (
               <button 
                 onClick={handleEnableNotifications}
                 disabled={notificationLoading}
